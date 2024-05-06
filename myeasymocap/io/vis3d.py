@@ -9,12 +9,52 @@ from easymocap.mytools.vis_base import merge, plot_bbox
 from easymocap.mytools.camera_utils import Undistort
 from .vis import VisBase
 
+import subprocess
+
 class Render(VisBase):
-    def __init__(self, name='render', scale=0.5, backend='pyrender', **kwargs) -> None:
+    def __init__(self, name='render', scale=0.5, backend='pyrender', posenet_aug=None, **kwargs) -> None:
         super().__init__(name=name, scale=1., **kwargs)
         self.scale3d = scale
+        self.posnet_aug = posenet_aug
 
     def __call__(self, body_model, params, cameras, imgnames):
+        if self.posnet_aug:
+
+            # Path to the Python executable in the other environment
+            python_env_path = "/home/tony/miniconda3/envs/mdm/bin/python"
+            working_dir = "/home/tony/local-git-repo/motion-diffusion-model"
+
+            # Command to be executed
+            command = [
+                python_env_path,
+                "-m",
+                "sample.cond_noise_motion",
+                "--model_path",
+                "save/specaug_root_and_zero_background/model000120000.pt",
+                "--edit_mode",
+                "in_between",
+                "--num_samples",
+                "10",
+                "--num_repetitions",
+                "1",
+                "--input_motion",
+                f"/home/tony/local-git-repo/EasyMocap/{self.output}/smpl",
+                "--to_the_motion",
+                "--prefix_end",
+                "0.0",
+                "--suffix_start",
+                "1.0",
+            ]
+            print(" ".join(command))
+            # Call the command using subprocess
+            subprocess.call(command, cwd=working_dir)
+
+            print("augmented by posenet！")
+            poses = np.load(f"{self.output}/the_motion.npy")
+            # params['Th'] = poses[:, :3] # not good
+            # params['Rh'] = poses[:, 3:6]
+            params['poses'][:, 6:] = poses[:, 12:] # ignore hips
+
         vertices = body_model.vertices(params, return_tensor=False)
         faces = body_model.faces
         for nf, img in enumerate(tqdm(imgnames, desc=self.name)):
